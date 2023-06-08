@@ -5,7 +5,17 @@ use crate::Endianness;
 
 use crate::error::{Error, self} ;
 
-const NATIVE_ENDIANNESS: Endianness = Endianness::LittleEndianness ;
+#[cfg(feature = "little")]
+pub const NATIVE_ENDIANNESS: Endianness = Endianness::LittleEndianness ;
+
+#[cfg(feature = "big")]
+pub const NATIVE_ENDIANNESS: Endianness = Endianness::BigEndianness ;
+
+#[cfg(feature = "big")]
+compile_error!("big endianness not supported yet!");
+
+#[cfg(all(feature = "little", feature = "big"))]
+compile_error!("feature \"little\" and feature \"big\" cannot be enabled at the same time");
 
 pub struct Encoder<'storage> {
     // buf: &'storage mut [u8],
