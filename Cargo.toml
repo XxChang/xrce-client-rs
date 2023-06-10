@@ -22,6 +22,10 @@ panic-rtt-target = { version =  "0.1.2", features = ["cortex-m"] }
 features = ["rt", "stm32f103"]
 version = "0.10.0"
 
+[target.thumbv7m-none-eabi.dev-dependencies.rtt-target]
+version = "0.3.1"
+features = ["cortex-m"]
+
 [features]
 default = ["little"]
 little = []

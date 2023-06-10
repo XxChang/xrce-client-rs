@@ -1,5 +1,7 @@
 use core::ptr ;
 use serde::Serializer;
+use serde::de;
+use serde::Deserializer;
 use core::marker::PhantomData;
 use crate::Endianness;
 
@@ -50,10 +52,11 @@ impl<'storage> Encoder<'storage> {
                 ptr.add(buffer.len())
             },
             offset: 0,
-            endianness: endianness,
+            endianness,
             _p: PhantomData,
         }
     }
+
     fn set_pos_of<T>(&mut self) -> error::Result<()> {
         let alignment = core::mem::size_of::<T>();
         let rem_mask = alignment - 1;
@@ -460,4 +463,352 @@ impl serde::ser::SerializeStructVariant for &mut Encoder<'_>
     }
 }
 
+pub struct Decoder<'storage> {
+    pos: *const u8,
+    end: *const u8,
+    offset: usize,
+    endianness: Endianness,
+    _p: PhantomData<&'storage [u8]>
+}
 
+impl<'storage> Decoder<'storage> {
+    pub fn new(buffer: &'storage mut [u8]) -> Self {
+        let ptr = buffer.as_ptr() ;
+        Decoder { 
+            // buf: buffer, 
+            pos: ptr, 
+            end: unsafe {
+                ptr.add(buffer.len())
+            },
+            offset: 0,
+            endianness: NATIVE_ENDIANNESS,
+            _p: PhantomData,
+        }
+    }
+
+    pub fn new_with_endianness(buffer: &'storage mut [u8], endianness: Endianness) -> Self {
+        let ptr = buffer.as_mut_ptr() ;
+        Decoder { 
+            // buf: buffer, 
+            pos: ptr, 
+            end: unsafe {
+                ptr.add(buffer.len())
+            },
+            offset: 0,
+            endianness,
+            _p: PhantomData,
+        }
+    }
+
+    fn set_pos_of<T>(&mut self) -> error::Result<()> {
+        let alignment = core::mem::size_of::<T>();
+        let rem_mask = alignment - 1;
+        
+        match self.offset & rem_mask {
+            0 => {  },
+            n @ 1..=7 => {
+                let amt = alignment - n ;
+                self.pos = self.check_avaliable(amt)?;
+                self.offset += amt ;
+            },
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
+    fn check_avaliable(&mut self, bytes: usize) -> error::Result<*const u8> {
+        let new_pos = unsafe { self.pos.add(bytes) };
+        if new_pos <= self.end {
+            Ok(new_pos)
+        } else {
+            Err(error::Error::BufferNotEnough)
+        }
+    }
+
+    fn read_str(&mut self) -> error::Result<&'storage str> {
+        core::str::from_utf8(
+            { 
+                let v = self.read_bytes()?;
+                let len = v.len();
+                &v[..(len - 1)]
+            }
+        ).map_err(|e| Error::InvalidUtf8Encoding(e))
+    }
+
+    fn read_bytes(&mut self) -> error::Result<&'storage [u8]> {
+       let len: u32 = de::Deserialize::deserialize(&mut *self)?;
+       self.check_avaliable(len as usize)?;
+       unsafe {
+         let sli = core::slice::from_raw_parts(self.pos, len as usize);
+         self.pos = self.pos.add(len as usize);
+         Ok(sli)
+       }
+    }
+}
+
+macro_rules! impl_deserialize_value {
+    ($de_method:ident<$ty:ty> = $visitor_method:ident ) => {
+        fn $de_method<V>(self, visitor: V) -> error::Result<V::Value>
+        where
+            V: de::Visitor<'de>,
+        {
+            self.set_pos_of::<$ty>()?;
+            let len = core::mem::size_of::<$ty>();
+            self.check_avaliable(len)?;
+            let v: $ty = <$ty>::default();
+            unsafe {
+                let data_ptr = ptr::addr_of!(v) as *mut u8;
+                if NATIVE_ENDIANNESS == self.endianness {
+                    ptr::copy_nonoverlapping(self.pos, data_ptr, len) ;
+                } else {
+                    for i in 0..len {
+                        *data_ptr.add(i) = *self.pos.add(len - 1 - i) ;
+                    }
+                }
+                self.pos = self.pos.add(len);
+            }
+            self.offset += len;
+            visitor.$visitor_method(v)
+        }
+    };
+}
+
+impl<'de,> Deserializer<'de> for &mut Decoder<'de> 
+{
+    type Error = Error;
+    
+    fn deserialize_any<V>(self, _: V) -> Result<V::Value, Self::Error>
+        where
+            V: serde::de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: serde::de::Visitor<'de> {
+        self.set_pos_of::<bool>()?;
+        self.check_avaliable(1)?;
+        let v = 0u8;
+        unsafe{
+            ptr::copy_nonoverlapping(self.pos, ptr::addr_of!(v) as *mut u8, 1);
+            self.pos = self.pos.add(1);
+        };
+        self.offset += 1;
+        match v {
+            1 => visitor.visit_bool(true),
+            0 => visitor.visit_bool(false),
+            value => Err(Error::InvalidBoolEncoding(value)),
+        }
+    }
+
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: serde::de::Visitor<'de> {
+        self.set_pos_of::<i8>()?;
+        self.check_avaliable(1)?;
+        let v = 0i8;
+        unsafe{
+            ptr::copy_nonoverlapping(self.pos, ptr::addr_of!(v) as *mut u8, 1);
+            self.pos = self.pos.add(1);
+        };
+        self.offset += 1;
+        visitor.visit_i8(v)
+    }
+
+    impl_deserialize_value!(deserialize_i16<i16> = visit_i16 );
+    impl_deserialize_value!(deserialize_i32<i32> = visit_i32 );
+    impl_deserialize_value!(deserialize_i64<i64> = visit_i64 );
+
+    fn deserialize_u8<V>(self, visitor: V) -> error::Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        self.set_pos_of::<u8>()?;
+        self.check_avaliable(1)?;
+        let v = 0u8;
+        unsafe{
+            ptr::copy_nonoverlapping(self.pos, ptr::addr_of!(v) as *mut u8, 1);
+            self.pos = self.pos.add(1);
+        };
+        self.offset += 1;
+        visitor.visit_u8(v)
+    }
+
+    impl_deserialize_value!(deserialize_u16<u16> = visit_u16);
+    impl_deserialize_value!(deserialize_u32<u32> = visit_u32);
+    impl_deserialize_value!(deserialize_u64<u64> = visit_u64);
+
+    impl_deserialize_value!(deserialize_f32<f32> = visit_f32);
+    impl_deserialize_value!(deserialize_f64<f64> = visit_f64);
+
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        self.set_pos_of::<u8>()?;
+        self.check_avaliable(1)?;
+        let v = [0u8;4];
+        unsafe{
+            ptr::copy_nonoverlapping(self.pos, ptr::addr_of!(v) as *mut u8, 1);
+
+        };
+        if utf8_char_width(v[0]) != 1 {
+            Err(Error::InvalidCharEncoding)
+        } else {
+            unsafe {
+                self.pos = self.pos.add(1);
+            }
+            self.offset += 1;
+            visitor.visit_char(v[0] as char)
+        }
+    }
+
+    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {    
+        visitor.visit_borrowed_str(&self.read_str()?)
+    }
+
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        self.deserialize_str(visitor)
+    }
+
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        visitor.visit_borrowed_bytes(self.read_bytes()?)
+    }
+
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        self.deserialize_bytes(visitor)
+    }
+
+    fn deserialize_option<V>(self, _: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        visitor.visit_unit()
+    }
+
+    fn deserialize_unit_struct<V>(
+            self,
+            _: &'static str,
+            visitor: V,
+        ) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        visitor.visit_unit()
+    }
+
+    fn deserialize_newtype_struct<V>(
+            self,
+            _: &'static str,
+            visitor: V,
+        ) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        visitor.visit_newtype_struct(self)
+    }
+
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        let len: u32 = de::Deserialize::deserialize(&mut *self)?;
+        self.deserialize_tuple(len as usize, visitor)
+    }
+
+    fn deserialize_tuple<V>(self, _: usize, _: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn deserialize_tuple_struct<V>(
+            self,
+            _: &'static str,
+            _: usize,
+            _: V,
+        ) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn deserialize_map<V>(self, _: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn deserialize_struct<V>(
+            self,
+            _: &'static str,
+            _: &'static [&'static str],
+            _: V,
+        ) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn deserialize_enum<V>(
+            self,
+            _: &'static str,
+            _: &'static [&'static str],
+            _: V,
+        ) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn deserialize_identifier<V>(self, _: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn deserialize_ignored_any<V>(self, _: V) -> Result<V::Value, Self::Error>
+        where
+            V: de::Visitor<'de> {
+        unimplemented!()
+    }
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
+}
+
+#[inline]
+fn utf8_char_width(first_byte: u8) -> usize {
+    UTF8_CHAR_WIDTH[first_byte as usize] as usize
+}
+
+// https://tools.ietf.org/html/rfc3629
+const UTF8_CHAR_WIDTH: &[u8; 256] = &[
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0x1F
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0x3F
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0x5F
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0x7F
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x9F
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0xBF
+    0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, //
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xDF
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // 0xEF
+    4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0xFF
+];

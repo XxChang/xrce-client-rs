@@ -69,7 +69,7 @@ mod test {
                 0x00
             ],
             create_session_buffer[..22],
-        )
+        );
     }
 
 }
