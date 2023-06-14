@@ -8,6 +8,15 @@ pub mod session;
 mod header;
 mod submessage;
 mod types;
+pub mod serial_transport;
+
+mod communication;
+mod lowlevel_io;
+
+pub mod time;
+
+const MIN_SESSION_CONNECTION_INTERVAL: i64 = 1000;
+const MAX_SESSION_CONNECTION_ATTEMPTS: usize = 10;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Endianness {

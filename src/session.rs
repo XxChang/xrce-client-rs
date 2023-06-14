@@ -1,7 +1,14 @@
+use core::convert::Infallible;
+
+use nb::block;
+
 use crate::error;
 use crate::header::{CLIENT_KEY_SIZE, SESSION_ID_WITHOUT_CLIENT_KEY, MessageHeader};
 use crate::submessage::SUBHEADER_SIZE;
 use crate::types::{CREATE_CLIENT_Payload, CLIENT_Representation};
+use crate::communication::Transmitter;
+use crate::time::Clock;
+use crate::{MIN_SESSION_CONNECTION_INTERVAL, MAX_SESSION_CONNECTION_ATTEMPTS};
 
 #[cfg(any(feature = "hard-liveliness-check", feature = "profile-shared-memory"))]
 use crate::types::Property;
@@ -28,25 +35,34 @@ const CREATE_SESSION_MAX_MSG_SIZE: usize = MAX_HEADER_SIZE + SUBHEADER_SIZE + CR
 type ClientKey = [u8;4];
 ///
 /// 
+#[derive(Debug)]
 struct SessionInfo {
     id: u8,
     key: ClientKey,
 }
 
-pub struct Session {
+#[derive(Debug)]
+pub struct Session<T: Transmitter, C: Clock> {
+    transmitter: T,
+    clock: C,
     info: SessionInfo,
     mtu: u16,
 }
 
+#[derive(Debug)]
 pub enum Error {
-
+    Denied,
+    InvalidData,
+    Incompatible,
 }
 
 type SessionResult = core::result::Result<(), Error> ;
 
-impl Session {
-    pub fn new(key: ClientKey) -> Self {
+impl<T: Transmitter, C: Clock> Session<T, C> {
+    pub fn new(key: ClientKey, transmitter: T, clock: C) -> Self {
         Session {
+            transmitter,
+            clock,
             info: SessionInfo { 
                 id: 0x81,
                 key,
@@ -59,16 +75,18 @@ impl Session {
         let mut create_session_buffer = [0u8;CREATE_SESSION_MAX_MSG_SIZE] ;
 
         // indicate that there is no session and that the client_key does not follow the message
-        MessageHeader::new(
+        let len1 = MessageHeader::new(
             self.info.id & SESSION_ID_WITHOUT_CLIENT_KEY, 
             0, 0, 
             None).to_slice(&mut create_session_buffer[..MIN_HEADER_SIZE]).unwrap();
         
-        self.buffer_create_session(self.mtu - core::mem::size_of::<usize>() as u16, &mut create_session_buffer[MIN_HEADER_SIZE..]).unwrap();
-        Ok(())
+        let len2 = self.buffer_create_session(self.mtu - core::mem::size_of::<usize>() as u16, &mut create_session_buffer[MIN_HEADER_SIZE..]).unwrap();
+        
+        let len = len1 + len2;
+        self.wait_session_status(&mut create_session_buffer[..len], MAX_SESSION_CONNECTION_ATTEMPTS)
     }
 
-    fn buffer_create_session(&self, mtu: u16, buf: &mut [u8]) -> error::Result<()> {
+    fn buffer_create_session(&self, mtu: u16, buf: &mut [u8]) -> error::Result<usize> {
         let payload = CREATE_CLIENT_Payload {
             client_representation: CLIENT_Representation {
                 xrce_cookie: [b'X', b'R', b'C', b'E'],
@@ -120,5 +138,28 @@ impl Session {
         };
         
         payload.to_slice(buf)
+    }
+
+    fn wait_session_status(&mut self, buf: &[u8], attempts: usize) -> SessionResult {
+
+        for _ in 0..attempts {
+            self.transmitter.send_msg(buf).unwrap();
+
+            let start_timestamp = self.clock.now();
+
+
+            let remaining_time = MIN_SESSION_CONNECTION_INTERVAL;
+
+            // let 
+
+        }
+
+        Ok(())
+    }
+
+    fn listen_message(&mut self, remaining_time: i64) -> nb::Result<(), Infallible> {
+        
+        
+        Ok(())
     }
 }

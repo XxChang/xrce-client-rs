@@ -92,13 +92,13 @@ impl Serialize for CREATE_CLIENT_Payload {
 const CREATE_CLIENT_PAYLOAD_SIZE:usize = 16;
 
 impl CREATE_CLIENT_Payload {
-    pub fn to_slice(self, buf: &mut [u8]) -> error::Result<()> {
+    pub fn to_slice(self, buf: &mut [u8]) -> error::Result<usize> {
         let mut ucdr = micro_cdr::Encoder::new(buf);
 
         // TODO add properties
         SubMessageHeader::CreateClient(CREATE_CLIENT_PAYLOAD_SIZE as u16).serialize(&mut ucdr)?;
         self.serialize(&mut ucdr)?;
 
-        Ok(())
+        Ok(ucdr.finalize())
     }
 }

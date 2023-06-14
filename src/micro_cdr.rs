@@ -90,6 +90,10 @@ impl<'storage> Encoder<'storage> {
         
         self.serialize_u32(v as u32)
     }
+
+    pub fn finalize(self) -> usize {
+        self.offset
+    }
 }
 
 macro_rules! impl_serialize_value {
