@@ -5,5 +5,6 @@
     "rust-analyzer.checkOnSave.allTargets": false,
     "rust-analyzer.checkOnSave.extraArgs": [
         "--bins"
-    ]
+    ],
+    "rust-analyzer.cargo.target": "thumbv7m-none-eabi"
 }

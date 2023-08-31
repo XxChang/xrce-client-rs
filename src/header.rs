@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde::Deserialize;
 use serde::de;
+use serde::de::Visitor;
 use serde::ser::SerializeTuple;
 use crate::{error, micro_cdr};
 
@@ -43,27 +44,52 @@ impl Serialize for MessageHeader {
     }
 }
 
-// impl<'de> Deserialize<'de> for MessageHeader {
+impl<'de> Deserialize<'de> for MessageHeader {
     
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//         where
-//             D: serde::Deserializer<'de> {
-//         let session_id: u8 = de::Deserialize::deserialize(deserializer)?;
-//         let stream_id: u8 = de::Deserialize::deserialize(deserializer)?;
-//         let seq_num: u16 = de::Deserialize::deserialize(deserializer)?;
-//         let key = if session_id < SESSION_ID_WITHOUT_CLIENT_KEY {
-//             let k1: u8 = de::Deserialize::deserialize(deserializer)?;
-//             let k2: u8 = de::Deserialize::deserialize(deserializer)?;
-//             let k3: u8 = de::Deserialize::deserialize(deserializer)?;
-//             let k4: u8 = de::Deserialize::deserialize(deserializer)?;
-//             Some([k1,k2,k3,k4])
-//         } else {
-//             None
-//         };
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de> 
+    {
+        struct MessageHeaderVisitor;
 
-//         Ok(MessageHeader::new(session_id, stream_id, seq_num, key))
-//     }
-// }
+        impl<'de> Visitor<'de> for MessageHeaderVisitor {
+            type Value = MessageHeader;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("struct Message")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+                where
+                    A: de::SeqAccess<'de>, {
+                let session_id: u8 = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let stream_id: u8 = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let seq_num: u16 = seq.next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                let key = if session_id < SESSION_ID_WITHOUT_CLIENT_KEY {
+                    let k1: u8 = seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                    let k2: u8 = seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                    let k3: u8 = seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                    let k4: u8 = seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                    Some([k1, k2, k3, k4])
+                } else {
+                    None
+                };
+                Ok(
+                    MessageHeader { session_id, stream_id, sequence_num: seq_num, key }
+                )
+            }
+        }
+
+        deserializer.deserialize_tuple_struct("", 7, MessageHeaderVisitor)
+    }
+}
 
 impl MessageHeader {
     pub fn new(session_id: u8, stream_id: u8, seq_num: u16, key: Option<ClientKey>) -> Self {
@@ -79,6 +105,11 @@ impl MessageHeader {
         let mut ucdr = micro_cdr::Encoder::new(buf);
         self.serialize(&mut ucdr)?;
         Ok(ucdr.finalize())
+    }
+
+    pub fn from_slice(buf: &[u8]) -> error::Result<MessageHeader> {
+        let mut ucdr = micro_cdr::Decoder::new(buf);
+        MessageHeader::deserialize(&mut ucdr)
     }
 }
 

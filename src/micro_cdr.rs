@@ -476,7 +476,7 @@ pub struct Decoder<'storage> {
 }
 
 impl<'storage> Decoder<'storage> {
-    pub fn new(buffer: &'storage mut [u8]) -> Self {
+    pub fn new(buffer: &'storage [u8]) -> Self {
         let ptr = buffer.as_ptr() ;
         Decoder { 
             // buf: buffer, 
@@ -578,7 +578,7 @@ macro_rules! impl_deserialize_value {
     };
 }
 
-impl<'de,> Deserializer<'de> for &mut Decoder<'de> 
+impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a> 
 {
     type Error = Error;
     
@@ -730,21 +730,50 @@ impl<'de,> Deserializer<'de> for &mut Decoder<'de>
         self.deserialize_tuple(len as usize, visitor)
     }
 
-    fn deserialize_tuple<V>(self, _: usize, _: V) -> Result<V::Value, Self::Error>
+    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
         where
             V: de::Visitor<'de> {
-        unimplemented!()
+        struct Access<'a, 'b: 'a>
+        {
+            deserializer: &'a mut Decoder<'b>,
+            len: usize,
+        }
+
+        impl<'de, 'a, 'b: 'de> de::SeqAccess<'de> for Access<'a, 'b> {
+            type Error = Error;
+
+            fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+                where
+                    T: de::DeserializeSeed<'de> {
+                if self.len > 0 {
+                    self.len -= 1;
+                    let value = de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    Ok(Some(value))
+                } else {
+                    Ok(None)
+                }
+            }
+
+            fn size_hint(&self) -> Option<usize> {
+                Some(self.len)
+            }
+        }
+
+        visitor.visit_seq(Access {
+            deserializer: self,
+            len,
+        })
     }
 
     fn deserialize_tuple_struct<V>(
             self,
             _: &'static str,
-            _: usize,
-            _: V,
+            len: usize,
+            visitor: V,
         ) -> Result<V::Value, Self::Error>
         where
             V: de::Visitor<'de> {
-        unimplemented!()
+        self.deserialize_tuple(len, visitor)
     }
 
     fn deserialize_map<V>(self, _: V) -> Result<V::Value, Self::Error>
