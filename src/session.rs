@@ -1,12 +1,12 @@
 use core::convert::Infallible;
+use core::marker::PhantomData;
 
-use nb::block;
-
-use crate::error;
+use crate::{error, stream_id};
 use crate::header::{CLIENT_KEY_SIZE, SESSION_ID_WITHOUT_CLIENT_KEY, MessageHeader};
+use crate::stream_id::StreamId;
 use crate::submessage::SUBHEADER_SIZE;
 use crate::types::{CREATE_CLIENT_Payload, CLIENT_Representation};
-use crate::communication::Transmitter;
+use crate::communication::{Transmitter, Receiver};
 use crate::time::Clock;
 use crate::{MIN_SESSION_CONNECTION_INTERVAL, MAX_SESSION_CONNECTION_ATTEMPTS};
 
@@ -42,11 +42,11 @@ struct SessionInfo {
 }
 
 #[derive(Debug)]
-pub struct Session<T: Transmitter, C: Clock> {
-    transmitter: T,
-    clock: C,
+pub struct Session<'storage, Transport: Transmitter + Receiver<'storage>> {
+    transport: Transport,
     info: SessionInfo,
     mtu: u16,
+    _p: PhantomData<&'storage [u8]>,
 }
 
 #[derive(Debug)]
@@ -56,22 +56,22 @@ pub enum Error {
     Incompatible,
 }
 
-type SessionResult = core::result::Result<(), Error> ;
+type SessionResult<T> = core::result::Result<T, Error> ;
 
-impl<T: Transmitter, C: Clock> Session<T, C> {
-    pub fn new(key: ClientKey, transmitter: T, clock: C) -> Self {
+impl<'storage, T: Transmitter + Receiver<'storage> + Clock> Session<'storage, T> {
+    pub fn new(key: ClientKey, transport: T) -> Self {
         Session {
-            transmitter,
-            clock,
+            transport,
             info: SessionInfo { 
                 id: 0x81,
                 key,
             },
             mtu: 256,
+            _p: PhantomData,
         }
     }
 
-    pub fn create(&mut self) -> SessionResult {
+    pub fn create(&mut self) -> SessionResult<()> {
         let mut create_session_buffer = [0u8;CREATE_SESSION_MAX_MSG_SIZE] ;
 
         // indicate that there is no session and that the client_key does not follow the message
@@ -140,26 +140,77 @@ impl<T: Transmitter, C: Clock> Session<T, C> {
         payload.to_slice(buf)
     }
 
-    fn wait_session_status(&mut self, buf: &[u8], attempts: usize) -> SessionResult {
+    fn wait_session_status(&mut self, buf: &[u8], attempts: usize) -> SessionResult<()> {
+
+        if attempts == 0 {
+            self.transport.send_msg(buf).unwrap();
+            return Ok(());
+        }
 
         for _ in 0..attempts {
-            self.transmitter.send_msg(buf).unwrap();
+            self.transport.send_msg(buf).unwrap();
 
-            let start_timestamp = self.clock.now();
-
-
+            let start_timestamp = self.transport.now();
             let remaining_time = MIN_SESSION_CONNECTION_INTERVAL;
 
-            // let 
+            
 
         }
 
         Ok(())
     }
 
-    fn listen_message(&mut self, remaining_time: i64) -> nb::Result<(), Infallible> {
+    fn read_message(&mut self, buf: &[u8]) -> SessionResult<()> {
+        let header = MessageHeader::from_slice(buf).map_err(|_| Error::InvalidData)?;
+
+        let mut correct_msg: bool = false;
+        if header.session_id == self.info.id {
+            if SESSION_ID_WITHOUT_CLIENT_KEY > self.info.id
+            {
+                if let Some(key) = header.key {
+                    if key == self.info.key {
+                        correct_msg = true;
+                    } else {
+                        correct_msg = false;
+                    }
+                } else {
+                    correct_msg = false;
+                }
+            } else {
+                correct_msg = true;
+            }
+        };
+
+        if correct_msg {
+            let id = StreamId::from_raw(header.session_id, crate::stream_id::StreamDirection::InputStream);
+            if header.key.is_some() {
+                self.read_stream(&buf[(MAX_HEADER_SIZE - 1)..], id, header.sequence_num);
+            } else {
+                self.read_stream(&buf[(MIN_HEADER_SIZE - 1)..], id, header.sequence_num);
+            }
+            Ok(())
+        } else {
+            Err(Error::InvalidData)
+        }
+    }
+
+    fn read_stream(&mut self, buf: &[u8], stream_id: StreamId, seq_num: u16)
+    {
+        match stream_id.type_u {
+            stream_id::StreamType::NoneStream => {},
+            stream_id::StreamType::BestEffortStream => {},
+            stream_id::StreamType::ReliableStream => {},
+            stream_id::StreamType::SharedMemoryStream => {unimplemented!()},
+        };
+    }
+
+    fn listen_message(&'storage mut self, remaining_time: i32) -> nb::Result<(), Infallible> {
         
+        let recv = self.transport.receive_msg(remaining_time).unwrap();
         
+        if recv.len() != 0 {
+
+        }
         Ok(())
     }
 }

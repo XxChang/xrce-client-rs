@@ -19,10 +19,10 @@ type ClientKey = [u8;4];
 /// |                  clientKey (if sessionId <= 127)                  |
 /// +----------------+--------+-------+----------------+----------------+ 
 pub struct MessageHeader {
-    session_id: u8,
-    stream_id: u8,
-    sequence_num: u16,
-    key: Option<ClientKey>,
+    pub session_id: u8,
+    pub stream_id: u8,
+    pub sequence_num: u16,
+    pub key: Option<ClientKey>,
 }
 
 impl Serialize for MessageHeader {
@@ -56,7 +56,7 @@ impl<'de> Deserialize<'de> for MessageHeader {
             type Value = MessageHeader;
 
             fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
-                formatter.write_str("struct Message")
+                formatter.write_str("struct MessageHeader")
             }
 
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>

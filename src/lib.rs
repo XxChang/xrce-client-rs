@@ -8,10 +8,10 @@ pub mod session;
 mod header;
 mod submessage;
 mod types;
-pub mod serial_transport;
+mod stream_id;
 
 mod communication;
-mod lowlevel_io;
+pub mod serial;
 
 pub mod time;
 
@@ -23,6 +23,16 @@ pub enum Endianness {
     BigEndianness,
     LittleEndianness,
 }
+
+#[derive(Debug)]
+pub enum Error {
+    PartWritten(usize),
+    RemoteAddrError,
+    Timeout,
+    IoError,
+}
+
+pub type Result<T> = core::result::Result<T, Error>;
 
 #[cfg(test)]
 use panic_probe as _;
@@ -39,7 +49,7 @@ mod test {
     use defmt_rtt as _;
     use stm32f1xx_hal as _;
 
-    use crate::{header, types::{CREATE_CLIENT_Payload, CLIENT_Representation}};
+    use crate::{header, types::{CREATE_CLIENT_Payload, CLIENT_Representation}, submessage};
 
     #[test]
     fn serialize_create_client() {
@@ -81,4 +91,17 @@ mod test {
         );
     }
 
+    #[test]
+    fn ser_de_submessageheader() {
+        let mut submessage_header_buf = [0u8;256];
+        {
+            let header = submessage::SubMessageHeader::AckNack(20);
+            header.to_slice(&mut submessage_header_buf).unwrap();
+        }
+
+        {
+            let header = submessage::SubMessageHeader::from_slice(&submessage_header_buf).unwrap();
+            assert_eq!(header, submessage::SubMessageHeader::AckNack(20));
+        }
+    }
 }

@@ -1,3 +1,3 @@
 pub trait Clock {
-    fn now(&mut self) -> i64 ;
+    fn now(&mut self) -> i32 ;
 }
