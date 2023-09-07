@@ -49,7 +49,7 @@ mod test {
     use defmt_rtt as _;
     use stm32f1xx_hal as _;
 
-    use crate::{header::{self, MessageHeader}, types::{CREATE_CLIENT_Payload, CLIENT_Representation}, submessage, session};
+    use crate::{header::{self, MessageHeader}, types::{CREATE_CLIENT_Payload, CLIENT_Representation}, submessage, session, micro_cdr};
 
     #[test]
     fn ser_de_create_client() {
@@ -125,5 +125,24 @@ mod test {
             assert_eq!(header, submessage::SubMessageHeader::AckNack(20));
         }
     }
-    
+
+    #[test]
+    fn align_test() {
+        let v: bool = true;
+        let mut buf = [0u8;256];
+        {
+            let mut writer = micro_cdr::Encoder::new(&mut buf);
+            serde::Serializer::serialize_bool(&mut writer, v).unwrap();
+            serde::Serializer::serialize_f32(&mut writer, 32.0).unwrap();
+            assert_eq!(writer.offset, 8);
+
+            writer.set_pos_of::<f32>().unwrap();
+            assert_eq!(writer.offset, 8);
+            serde::Serializer::serialize_bool(&mut writer, v).unwrap();
+            assert_eq!(writer.offset, 9);
+
+            writer.set_pos_of::<f64>().unwrap();
+            assert_eq!(writer.offset, 16);
+        }
+    } 
 }

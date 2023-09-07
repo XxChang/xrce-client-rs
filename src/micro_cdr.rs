@@ -23,7 +23,7 @@ pub struct Encoder<'storage> {
     // buf: &'storage mut [u8],
     pos: *mut u8,
     end: *mut u8,
-    offset: usize,
+    pub offset: usize,
     endianness: Endianness,
     _p: PhantomData<&'storage [u8]>
 }
@@ -57,7 +57,7 @@ impl<'storage> Encoder<'storage> {
         }
     }
 
-    fn set_pos_of<T>(&mut self) -> error::Result<()> {
+    pub fn set_pos_of<T>(&mut self) -> error::Result<()> {
         let alignment = core::mem::size_of::<T>();
         let rem_mask = alignment - 1;
         
