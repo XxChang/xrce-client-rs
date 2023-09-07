@@ -18,6 +18,7 @@ type ClientKey = [u8;4];
 /// +----------------+----------------+----------------+----------------+
 /// |                  clientKey (if sessionId <= 127)                  |
 /// +----------------+--------+-------+----------------+----------------+ 
+#[derive(Debug, PartialEq)]
 pub struct MessageHeader {
     pub session_id: u8,
     pub stream_id: u8,

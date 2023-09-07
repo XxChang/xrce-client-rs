@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use crate::{error, stream_id};
 use crate::header::{CLIENT_KEY_SIZE, SESSION_ID_WITHOUT_CLIENT_KEY, MessageHeader};
 use crate::stream_id::StreamId;
-use crate::submessage::SUBHEADER_SIZE;
+use crate::submessage::{SUBHEADER_SIZE, SubMessageHeader};
 use crate::types::{CREATE_CLIENT_Payload, CLIENT_Representation};
 use crate::communication::{Transmitter, Receiver};
 use crate::time::Clock;
@@ -27,9 +27,9 @@ const HARD_LIVELINESS_CHECK_ADD_SIZE: usize = 0;
 
 const CREATE_SESSION_PROPERTIES_MAX_SIZE: usize = PROFILE_SHARED_MEMORY_ADD_SIZE + HARD_LIVELINESS_CHECK_ADD_SIZE ;
 
-const MIN_HEADER_SIZE: usize = 4;
+pub const MIN_HEADER_SIZE: usize = 4;
 const CREATE_CLIENT_PAYLOAD_SIZE: usize = 16;
-const MAX_HEADER_SIZE: usize =  MIN_HEADER_SIZE + CLIENT_KEY_SIZE ;
+pub const MAX_HEADER_SIZE: usize =  MIN_HEADER_SIZE + CLIENT_KEY_SIZE ;
 const CREATE_SESSION_MAX_MSG_SIZE: usize = MAX_HEADER_SIZE + SUBHEADER_SIZE + CREATE_CLIENT_PAYLOAD_SIZE + CREATE_SESSION_PROPERTIES_MAX_SIZE;
 
 type ClientKey = [u8;4];
@@ -87,8 +87,8 @@ impl<'storage, T: Transmitter + Receiver<'storage> + Clock> Session<'storage, T>
     }
 
     fn buffer_create_session(&self, mtu: u16, buf: &mut [u8]) -> error::Result<usize> {
-        let payload = CREATE_CLIENT_Payload {
-            client_representation: CLIENT_Representation {
+        let payload = CREATE_CLIENT_Payload (
+            CLIENT_Representation {
                 xrce_cookie: [b'X', b'R', b'C', b'E'],
                 xrce_version: [0x01u8, 0x00u8],
                 xrce_vendor_id: [0x01, 0x0F],
@@ -135,7 +135,7 @@ impl<'storage, T: Transmitter + Receiver<'storage> + Clock> Session<'storage, T>
 
                 mtu
             }
-        };
+        );
         
         payload.to_slice(buf)
     }
@@ -203,6 +203,8 @@ impl<'storage, T: Transmitter + Receiver<'storage> + Clock> Session<'storage, T>
             stream_id::StreamType::SharedMemoryStream => {unimplemented!()},
         };
     }
+
+    // fn read_submessage_list(&mut self, buf: &[u8], stream_id: StreamId)
 
     fn listen_message(&'storage mut self, remaining_time: i32) -> nb::Result<(), Infallible> {
         
