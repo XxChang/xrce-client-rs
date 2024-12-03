@@ -1,3 +1,5 @@
+use embedded_hal::delay::DelayNs;
+
 use crate::Result;
 
 pub mod transport;
@@ -9,4 +11,3 @@ pub trait SerialPlatformOps {
 
     fn millis(&mut self) -> i32;
 }
-

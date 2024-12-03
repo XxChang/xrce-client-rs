@@ -4,58 +4,62 @@
 #![no_main]
 
 use cortex_m_rt::entry;
+use embedded_hal::serial;
+use nb::block;
+use panic_rtt_target as _;
+use rtt_target::rtt_init_print;
 use stm32f1xx_hal::{
     pac,
     prelude::*,
     serial::{Config, Serial},
     timer::CounterMs,
 };
-use xrce_client_rs::session::Session;
-use xrce_client_rs::serial::SerialPlatformOps;
 use xrce_client_rs::serial::transport::SerialTransport;
-use nb::block;
-use embedded_hal::serial;
-use panic_rtt_target as _;
-use rtt_target::rtt_init_print;
+use xrce_client_rs::serial::SerialPlatformOps;
+use xrce_client_rs::session::Session;
 
 struct SerialInterface<TX, RX> {
-    tx: TX, 
+    tx: TX,
     rx: RX,
     clock: CounterMs<pac::TIM1>,
 }
 
-impl<TX, RX> SerialPlatformOps for SerialInterface<TX, RX> 
-where TX: serial::Write<u8>,
-      RX: serial::Read<u8>,
+impl<TX, RX> SerialPlatformOps for SerialInterface<TX, RX>
+where
+    TX: serial::Write<u8>,
+    RX: serial::Read<u8>,
 {
-    fn read_serial_data(&mut self, buf: &mut [u8], len: usize, timeout: i32) -> xrce_client_rs::Result<usize> {
+    fn read_serial_data(
+        &mut self,
+        buf: &mut [u8],
+        len: usize,
+        timeout: i32,
+    ) -> xrce_client_rs::Result<usize> {
         let mut timeout = timeout;
         let mut ready_data: usize = 0;
 
         loop {
             let e = self.rx.read();
             match e {
-                Err(nb::Error::Other(_)) => { },
-                Err(nb::Error::WouldBlock) => { },
+                Err(nb::Error::Other(_)) => {}
+                Err(nb::Error::WouldBlock) => {}
                 Ok(x) => {
                     buf[ready_data] = x;
                     ready_data += 1;
                 }
             };
-            
+
             if ready_data == len {
                 return Ok(ready_data);
             }
 
             timeout -= self.millis();
-            if timeout < 0 && ready_data == 0
-            {
-                return Err(xrce_client_rs::Error::Timeout)
-            } else if timeout < 0 && ready_data > 0
-            {
+            if timeout < 0 && ready_data == 0 {
+                return Err(xrce_client_rs::Error::Timeout);
+            } else if timeout < 0 && ready_data > 0 {
                 return Ok(ready_data);
             }
-        };
+        }
     }
 
     fn write_serial_data(&mut self, buf: &[u8]) -> xrce_client_rs::Result<usize> {
@@ -123,7 +127,5 @@ fn main() -> ! {
     let mut session = Session::new([0xAA, 0xAA, 0xBB, 0xBB], transport);
 
     session.create().unwrap();
-    loop {
-        
-    }
+    loop {}
 }

@@ -1,9 +1,9 @@
 use core::str::Utf8Error;
 
-use serde::ser ;
-use serde::de ;
+use serde::de;
+use serde::ser;
 
-pub type Result<T> = core::result::Result<T, Error> ;
+pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
@@ -33,21 +33,27 @@ impl core::fmt::Display for Error {
             InvalidFormat(v) => write!(f, "invalid format {v}"),
             InvalidString => write!(f, "each character must have a length of 1"),
             InvalidUtf8Encoding(ref err) => core::fmt::Display::fmt(err, f),
-            SequenceMustHaveLength => write!(f, "sequences must have a knowable size ahead of time"),
+            SequenceMustHaveLength => {
+                write!(f, "sequences must have a knowable size ahead of time")
+            }
         }
     }
 }
 
 impl ser::Error for Error {
-    fn custom<T>(_:T) -> Self 
-    where 
-        T: core::fmt::Display {
+    fn custom<T>(_: T) -> Self
+    where
+        T: core::fmt::Display,
+    {
         Error::CustomerMessage
     }
 }
 
 impl de::Error for Error {
-    fn custom<T>(_:T) -> Self where T:core::fmt::Display {
+    fn custom<T>(_: T) -> Self
+    where
+        T: core::fmt::Display,
+    {
         Error::CustomerMessage
     }
 }

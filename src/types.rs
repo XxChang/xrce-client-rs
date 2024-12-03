@@ -1,27 +1,33 @@
-use serde::Deserialize;
-use serde::de::Visitor;
-use serde::Serialize;
-use serde::ser::SerializeTuple;
 use crate::error;
 use crate::micro_cdr;
 use crate::submessage::SubMessageHeader;
+use serde::de::Visitor;
+use serde::ser::SerializeTuple;
+use serde::Deserialize;
+use serde::Serialize;
 
 #[cfg(all(feature = "hard-liveliness-check", feature = "profile-shared-memory"))]
-const UXR_PROPERTY_SEQUENCE_MAX:usize = 2;
+const UXR_PROPERTY_SEQUENCE_MAX: usize = 2;
 
-#[cfg(all(feature = "hard-liveliness-check", not(feature = "profile-shared-memory")))]
-const UXR_PROPERTY_SEQUENCE_MAX:usize = 1;
+#[cfg(all(
+    feature = "hard-liveliness-check",
+    not(feature = "profile-shared-memory")
+))]
+const UXR_PROPERTY_SEQUENCE_MAX: usize = 1;
 
-#[cfg(all(not(feature = "hard-liveliness-check"), feature = "profile-shared-memory"))]
-const UXR_PROPERTY_SEQUENCE_MAX:usize = 1;
+#[cfg(all(
+    not(feature = "hard-liveliness-check"),
+    feature = "profile-shared-memory"
+))]
+const UXR_PROPERTY_SEQUENCE_MAX: usize = 1;
 
 #[cfg(not(any(feature = "hard-liveliness-check", feature = "profile-shared-memory")))]
-const UXR_PROPERTY_SEQUENCE_MAX:usize = 1;
+const UXR_PROPERTY_SEQUENCE_MAX: usize = 1;
 
-type XrceCookie = [u8;4];
-type XrceVersion = [u8;2];
-type XrceVendorId = [u8;2];
-type ClientKey = [u8;4];
+type XrceCookie = [u8; 4];
+type XrceVersion = [u8; 2];
+type XrceVendorId = [u8; 2];
+type ClientKey = [u8; 4];
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
@@ -41,23 +47,23 @@ pub struct Property<'a> {
     pub value: &'a str,
 }
 
-type PropertySeq<'a> = [Property<'a>;UXR_PROPERTY_SEQUENCE_MAX] ;
+type PropertySeq<'a> = [Property<'a>; UXR_PROPERTY_SEQUENCE_MAX];
 
 #[allow(non_camel_case_types)]
-pub struct CREATE_CLIENT_Payload<'a> (pub CLIENT_Representation<'a>);
+pub struct CREATE_CLIENT_Payload<'a>(pub CLIENT_Representation<'a>);
 
 impl<'a> Serialize for CREATE_CLIENT_Payload<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
-        
+    where
+        S: serde::Serializer,
+    {
         let mut s = serializer.serialize_tuple(0)?;
-        
+
         s.serialize_element(&self.0.xrce_cookie[0])?;
         s.serialize_element(&self.0.xrce_cookie[1])?;
         s.serialize_element(&self.0.xrce_cookie[2])?;
         s.serialize_element(&self.0.xrce_cookie[3])?;
-        
+
         s.serialize_element(&self.0.xrce_version[0])?;
         s.serialize_element(&self.0.xrce_version[1])?;
 
@@ -79,7 +85,7 @@ impl<'a> Serialize for CREATE_CLIENT_Payload<'a> {
                 s.serialize_element(property.value)?;
             }
         } else {
-            let optional = false ;
+            let optional = false;
             s.serialize_element(&optional)?;
         }
 
@@ -91,60 +97,76 @@ impl<'a> Serialize for CREATE_CLIENT_Payload<'a> {
 
 impl<'de: 'a, 'a> Deserialize<'de> for CREATE_CLIENT_Payload<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de> {
-        
+    where
+        D: serde::Deserializer<'de>,
+    {
         struct VisitorInside;
-        
+
         impl<'de> Visitor<'de> for VisitorInside {
             type Value = CREATE_CLIENT_Payload<'de>;
 
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-                where
-                    A: serde::de::SeqAccess<'de>, {
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
                 use serde::de;
-                Ok(CREATE_CLIENT_Payload(
-                    CLIENT_Representation {    
-                        xrce_cookie: [seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(0, &self))?,
-                                      seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(1, &self))?,
-                                      seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(2, &self))?,
-                                      seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(3, &self))?],
-                        xrce_version: [seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(4, &self))?,
-                                       seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(5, &self))?],
-                        xrce_vendor_id: [seq.next_element()?
-                                            .ok_or_else(|| de::Error::invalid_length(6, &self))?,
-                                         seq.next_element()?
-                                            .ok_or_else(|| de::Error::invalid_length(7, &self))?],
-                        client_key: [seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(8, &self))?,
-                                     seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(9, &self))?,
-                                     seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(10, &self))?,
-                                     seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(11, &self))?],
-                        session_id: seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(12, &self))?,
-                        properties: if seq.next_element()?.ok_or_else(|| de::Error::invalid_length(13, &self))?
-                                    {
-                                        Some([Property {
-                                            name: seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(3, &self))?,
-                                            value: seq.next_element()?
-                                        .ok_or_else(|| de::Error::invalid_length(3, &self))?,
-                                        };UXR_PROPERTY_SEQUENCE_MAX])
-                                    } else {
-                                        None
-                                    },
-                        mtu: seq.next_element()?.ok_or_else(|| de::Error::invalid_length(3, &self))?,
-                    }
-                ))                
+                Ok(CREATE_CLIENT_Payload(CLIENT_Representation {
+                    xrce_cookie: [
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(0, &self))?,
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(1, &self))?,
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(2, &self))?,
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(3, &self))?,
+                    ],
+                    xrce_version: [
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(4, &self))?,
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(5, &self))?,
+                    ],
+                    xrce_vendor_id: [
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(6, &self))?,
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(7, &self))?,
+                    ],
+                    client_key: [
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(8, &self))?,
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(9, &self))?,
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(10, &self))?,
+                        seq.next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(11, &self))?,
+                    ],
+                    session_id: seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(12, &self))?,
+                    properties: if seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(13, &self))?
+                    {
+                        Some(
+                            [Property {
+                                name: seq
+                                    .next_element()?
+                                    .ok_or_else(|| de::Error::invalid_length(3, &self))?,
+                                value: seq
+                                    .next_element()?
+                                    .ok_or_else(|| de::Error::invalid_length(3, &self))?,
+                            }; UXR_PROPERTY_SEQUENCE_MAX],
+                        )
+                    } else {
+                        None
+                    },
+                    mtu: seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(3, &self))?,
+                }))
             }
 
             fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
@@ -156,7 +178,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for CREATE_CLIENT_Payload<'a> {
     }
 }
 
-const CREATE_CLIENT_PAYLOAD_SIZE:usize = 16;
+const CREATE_CLIENT_PAYLOAD_SIZE: usize = 16;
 
 impl<'a> CREATE_CLIENT_Payload<'a> {
     pub fn to_slice(self, buf: &mut [u8]) -> error::Result<usize> {

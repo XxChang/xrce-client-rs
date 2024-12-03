@@ -1,17 +1,17 @@
-use core::ptr ;
-use serde::Serializer;
+use crate::Endianness;
+use core::marker::PhantomData;
+use core::ptr;
 use serde::de;
 use serde::Deserializer;
-use core::marker::PhantomData;
-use crate::Endianness;
+use serde::Serializer;
 
-use crate::error::{Error, self} ;
+use crate::error::{self, Error};
 
 #[cfg(feature = "little")]
-pub const NATIVE_ENDIANNESS: Endianness = Endianness::LittleEndianness ;
+pub const NATIVE_ENDIANNESS: Endianness = Endianness::LittleEndianness;
 
 #[cfg(feature = "big")]
-pub const NATIVE_ENDIANNESS: Endianness = Endianness::BigEndianness ;
+pub const NATIVE_ENDIANNESS: Endianness = Endianness::BigEndianness;
 
 #[cfg(feature = "big")]
 compile_error!("big endianness not supported yet!");
@@ -23,20 +23,18 @@ pub struct Encoder<'storage> {
     // buf: &'storage mut [u8],
     pos: *mut u8,
     end: *mut u8,
-    pub offset: usize,
+    pub(crate) offset: usize,
     endianness: Endianness,
-    _p: PhantomData<&'storage [u8]>
+    _p: PhantomData<&'storage [u8]>,
 }
 
 impl<'storage> Encoder<'storage> {
     pub fn new(buffer: &'storage mut [u8]) -> Self {
-        let ptr = buffer.as_mut_ptr() ;
-        Encoder { 
-            // buf: buffer, 
-            pos: ptr, 
-            end: unsafe {
-                ptr.add(buffer.len())
-            },
+        let ptr = buffer.as_mut_ptr();
+        Encoder {
+            // buf: buffer,
+            pos: ptr,
+            end: unsafe { ptr.add(buffer.len()) },
             offset: 0,
             endianness: NATIVE_ENDIANNESS,
             _p: PhantomData,
@@ -44,13 +42,11 @@ impl<'storage> Encoder<'storage> {
     }
 
     pub fn new_with_endianness(buffer: &'storage mut [u8], endianness: Endianness) -> Self {
-        let ptr = buffer.as_mut_ptr() ;
-        Encoder { 
-            // buf: buffer, 
-            pos: ptr, 
-            end: unsafe {
-                ptr.add(buffer.len())
-            },
+        let ptr = buffer.as_mut_ptr();
+        Encoder {
+            // buf: buffer,
+            pos: ptr,
+            end: unsafe { ptr.add(buffer.len()) },
             offset: 0,
             endianness,
             _p: PhantomData,
@@ -60,14 +56,14 @@ impl<'storage> Encoder<'storage> {
     pub fn set_pos_of<T>(&mut self) -> error::Result<()> {
         let alignment = core::mem::size_of::<T>();
         let rem_mask = alignment - 1;
-        
+
         match self.offset & rem_mask {
-            0 => {  },
+            0 => {}
             n @ 1..=7 => {
-                let amt = alignment - n ;
+                let amt = alignment - n;
                 self.pos = self.check_avaliable(amt)?;
-                self.offset += amt ;
-            },
+                self.offset += amt;
+            }
             _ => unreachable!(),
         }
 
@@ -87,7 +83,7 @@ impl<'storage> Encoder<'storage> {
         if v > core::u32::MAX as usize {
             return Err(Error::NumberOutOfRange);
         }
-        
+
         self.serialize_u32(v as u32)
     }
 
@@ -105,10 +101,10 @@ macro_rules! impl_serialize_value {
             unsafe {
                 let data_ptr = ptr::addr_of!(v) as *const u8;
                 if NATIVE_ENDIANNESS == self.endianness {
-                    ptr::copy_nonoverlapping(data_ptr, self.pos, len) ;
+                    ptr::copy_nonoverlapping(data_ptr, self.pos, len);
                 } else {
                     for i in 0..len {
-                        *self.pos.add(i) = *data_ptr.add(len - 1 - i) ;
+                        *self.pos.add(i) = *data_ptr.add(len - 1 - i);
                     }
                 }
                 self.pos = self.pos.add(len);
@@ -121,8 +117,8 @@ macro_rules! impl_serialize_value {
 
 impl serde::Serializer for &mut Encoder<'_> {
     type Error = Error;
-    type Ok = () ;
-    
+    type Ok = ();
+
     type SerializeSeq = Self;
     type SerializeTuple = Self;
     type SerializeTupleStruct = Self;
@@ -134,8 +130,8 @@ impl serde::Serializer for &mut Encoder<'_> {
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
         self.set_pos_of::<bool>()?;
         self.check_avaliable(1)?;
-        unsafe{ 
-            ptr::copy_nonoverlapping(ptr::addr_of!(v) as *const u8, self.pos, 1) ;
+        unsafe {
+            ptr::copy_nonoverlapping(ptr::addr_of!(v) as *const u8, self.pos, 1);
             self.pos = self.pos.add(1);
         };
         self.offset += 1;
@@ -145,7 +141,7 @@ impl serde::Serializer for &mut Encoder<'_> {
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         self.set_pos_of::<i8>()?;
         self.check_avaliable(1)?;
-        unsafe{ 
+        unsafe {
             ptr::copy_nonoverlapping(ptr::addr_of!(v) as *const u8, self.pos, 1);
             self.pos = self.pos.add(1);
         }
@@ -160,10 +156,10 @@ impl serde::Serializer for &mut Encoder<'_> {
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
         self.set_pos_of::<u8>()?;
         self.check_avaliable(1)?;
-        unsafe{ 
+        unsafe {
             ptr::copy_nonoverlapping(ptr::addr_of!(v) as *const u8, self.pos, 1);
             self.pos = self.pos.add(1);
-        } 
+        }
         self.offset += 1;
         Ok(())
     }
@@ -179,7 +175,7 @@ impl serde::Serializer for &mut Encoder<'_> {
         if !v.is_ascii() {
             Err(Error::InvalidChar(v))
         } else {
-            let mut buf = [0u8; 1] ;
+            let mut buf = [0u8; 1];
             v.encode_utf8(&mut buf);
             self.serialize_u8(buf[0])
         }
@@ -197,13 +193,13 @@ impl serde::Serializer for &mut Encoder<'_> {
                 ptr::copy_nonoverlapping(data_ptr, self.pos, l);
                 self.pos = self.pos.add(l);
             }
-            self.offset += l ;
+            self.offset += l;
             Ok(())
         }
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        let l = v.len() ;
+        let l = v.len();
         self.write_usize_as_u32(l)?;
         self.check_avaliable(l)?;
         unsafe {
@@ -211,7 +207,7 @@ impl serde::Serializer for &mut Encoder<'_> {
             ptr::copy_nonoverlapping(data_ptr, self.pos, l);
             self.pos = self.pos.add(l);
         }
-        self.offset += l ;
+        self.offset += l;
         Ok(())
     }
 
@@ -220,8 +216,9 @@ impl serde::Serializer for &mut Encoder<'_> {
     }
 
     fn serialize_some<T: ?Sized>(self, _: &T) -> Result<Self::Ok, Self::Error>
-        where
-            T: serde::Serialize {
+    where
+        T: serde::Serialize,
+    {
         unimplemented!()
     }
 
@@ -234,33 +231,35 @@ impl serde::Serializer for &mut Encoder<'_> {
     }
 
     fn serialize_unit_variant(
-            self,
-            _: &'static str,
-            variant_index: u32,
-            _: &'static str,
-        ) -> Result<Self::Ok, Self::Error> {
+        self,
+        _: &'static str,
+        variant_index: u32,
+        _: &'static str,
+    ) -> Result<Self::Ok, Self::Error> {
         self.serialize_u32(variant_index)
     }
 
     fn serialize_newtype_struct<T: ?Sized>(
-            self,
-            _: &'static str,
-            value: &T,
-        ) -> Result<Self::Ok, Self::Error>
-        where
-            T: serde::Serialize {
+        self,
+        _: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        T: serde::Serialize,
+    {
         value.serialize(self)
     }
 
     fn serialize_newtype_variant<T: ?Sized>(
-            self,
-            _: &'static str,
-            variant_index: u32,
-            _: &'static str,
-            value: &T,
-        ) -> Result<Self::Ok, Self::Error>
-        where
-            T: serde::Serialize {
+        self,
+        _: &'static str,
+        variant_index: u32,
+        _: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        T: serde::Serialize,
+    {
         self.serialize_u32(variant_index)?;
         value.serialize(self)
     }
@@ -276,20 +275,20 @@ impl serde::Serializer for &mut Encoder<'_> {
     }
 
     fn serialize_tuple_struct(
-            self,
-            _: &'static str,
-            _: usize,
-        ) -> Result<Self::SerializeTupleStruct, Self::Error> {
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleStruct, Self::Error> {
         Ok(self)
     }
 
     fn serialize_tuple_variant(
-            self,
-            _: &'static str,
-            variant_index: u32,
-            _: &'static str,
-            _: usize,
-        ) -> Result<Self::SerializeTupleVariant, Self::Error> {
+        self,
+        _: &'static str,
+        variant_index: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         self.serialize_u32(variant_index)?;
         Ok(self)
     }
@@ -299,30 +298,31 @@ impl serde::Serializer for &mut Encoder<'_> {
     }
 
     fn serialize_struct(
-            self,
-            _: &'static str,
-            _: usize,
-        ) -> Result<Self::SerializeStruct, Self::Error> {
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeStruct, Self::Error> {
         Ok(self)
     }
 
     fn serialize_struct_variant(
-            self,
-            _: &'static str,
-            variant_index: u32,
-            _: &'static str,
-            _: usize,
-        ) -> Result<Self::SerializeStructVariant, Self::Error> {
+        self,
+        _: &'static str,
+        variant_index: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
         self.serialize_u32(variant_index)?;
         Ok(self)
     }
 
     fn collect_str<T: ?Sized>(self, _: &T) -> Result<Self::Ok, Self::Error>
-        where
-            T: core::fmt::Display {
+    where
+        T: core::fmt::Display,
+    {
         unimplemented!()
     }
-    
+
     fn is_human_readable(&self) -> bool {
         false
     }
@@ -334,8 +334,9 @@ impl serde::ser::SerializeSeq for &mut Encoder<'_> {
 
     #[inline]
     fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<(), Self::Error>
-        where
-            T: serde::Serialize {
+    where
+        T: serde::Serialize,
+    {
         value.serialize(&mut **self)
     }
 
@@ -345,8 +346,7 @@ impl serde::ser::SerializeSeq for &mut Encoder<'_> {
     }
 }
 
-impl serde::ser::SerializeTuple for &mut Encoder<'_>
-{
+impl serde::ser::SerializeTuple for &mut Encoder<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -364,8 +364,7 @@ impl serde::ser::SerializeTuple for &mut Encoder<'_>
     }
 }
 
-impl serde::ser::SerializeTupleStruct for &mut Encoder<'_>
-{
+impl serde::ser::SerializeTupleStruct for &mut Encoder<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -383,8 +382,7 @@ impl serde::ser::SerializeTupleStruct for &mut Encoder<'_>
     }
 }
 
-impl serde::ser::SerializeTupleVariant for &mut Encoder<'_>
-{
+impl serde::ser::SerializeTupleVariant for &mut Encoder<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -402,8 +400,7 @@ impl serde::ser::SerializeTupleVariant for &mut Encoder<'_>
     }
 }
 
-impl serde::ser::SerializeMap for &mut Encoder<'_>
-{
+impl serde::ser::SerializeMap for &mut Encoder<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -429,8 +426,7 @@ impl serde::ser::SerializeMap for &mut Encoder<'_>
     }
 }
 
-impl serde::ser::SerializeStruct for &mut Encoder<'_>
-{
+impl serde::ser::SerializeStruct for &mut Encoder<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -448,8 +444,7 @@ impl serde::ser::SerializeStruct for &mut Encoder<'_>
     }
 }
 
-impl serde::ser::SerializeStructVariant for &mut Encoder<'_>
-{
+impl serde::ser::SerializeStructVariant for &mut Encoder<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -472,18 +467,16 @@ pub struct Decoder<'storage> {
     end: *const u8,
     offset: usize,
     endianness: Endianness,
-    _p: PhantomData<&'storage [u8]>
+    _p: PhantomData<&'storage [u8]>,
 }
 
 impl<'storage> Decoder<'storage> {
     pub fn new(buffer: &'storage [u8]) -> Self {
-        let ptr = buffer.as_ptr() ;
-        Decoder { 
-            // buf: buffer, 
-            pos: ptr, 
-            end: unsafe {
-                ptr.add(buffer.len())
-            },
+        let ptr = buffer.as_ptr();
+        Decoder {
+            // buf: buffer,
+            pos: ptr,
+            end: unsafe { ptr.add(buffer.len()) },
             offset: 0,
             endianness: NATIVE_ENDIANNESS,
             _p: PhantomData,
@@ -491,13 +484,11 @@ impl<'storage> Decoder<'storage> {
     }
 
     pub fn new_with_endianness(buffer: &'storage mut [u8], endianness: Endianness) -> Self {
-        let ptr = buffer.as_mut_ptr() ;
-        Decoder { 
-            // buf: buffer, 
-            pos: ptr, 
-            end: unsafe {
-                ptr.add(buffer.len())
-            },
+        let ptr = buffer.as_mut_ptr();
+        Decoder {
+            // buf: buffer,
+            pos: ptr,
+            end: unsafe { ptr.add(buffer.len()) },
             offset: 0,
             endianness,
             _p: PhantomData,
@@ -507,14 +498,14 @@ impl<'storage> Decoder<'storage> {
     fn set_pos_of<T>(&mut self) -> error::Result<()> {
         let alignment = core::mem::size_of::<T>();
         let rem_mask = alignment - 1;
-        
+
         match self.offset & rem_mask {
-            0 => {  },
+            0 => {}
             n @ 1..=7 => {
-                let amt = alignment - n ;
+                let amt = alignment - n;
                 self.pos = self.check_avaliable(amt)?;
-                self.offset += amt ;
-            },
+                self.offset += amt;
+            }
             _ => unreachable!(),
         }
 
@@ -531,23 +522,22 @@ impl<'storage> Decoder<'storage> {
     }
 
     fn read_str(&mut self) -> error::Result<&'storage str> {
-        core::str::from_utf8(
-            { 
-                let v = self.read_bytes()?;
-                let len = v.len();
-                &v[..(len - 1)]
-            }
-        ).map_err(|e| Error::InvalidUtf8Encoding(e))
+        core::str::from_utf8({
+            let v = self.read_bytes()?;
+            let len = v.len();
+            &v[..(len - 1)]
+        })
+        .map_err(|e| Error::InvalidUtf8Encoding(e))
     }
 
     fn read_bytes(&mut self) -> error::Result<&'storage [u8]> {
-       let len: u32 = de::Deserialize::deserialize(&mut *self)?;
-       self.check_avaliable(len as usize)?;
-       unsafe {
-         let sli = core::slice::from_raw_parts(self.pos, len as usize);
-         self.pos = self.pos.add(len as usize);
-         Ok(sli)
-       }
+        let len: u32 = de::Deserialize::deserialize(&mut *self)?;
+        self.check_avaliable(len as usize)?;
+        unsafe {
+            let sli = core::slice::from_raw_parts(self.pos, len as usize);
+            self.pos = self.pos.add(len as usize);
+            Ok(sli)
+        }
     }
 }
 
@@ -564,10 +554,10 @@ macro_rules! impl_deserialize_value {
             unsafe {
                 let data_ptr = ptr::addr_of!(v) as *mut u8;
                 if NATIVE_ENDIANNESS == self.endianness {
-                    ptr::copy_nonoverlapping(self.pos, data_ptr, len) ;
+                    ptr::copy_nonoverlapping(self.pos, data_ptr, len);
                 } else {
                     for i in 0..len {
-                        *data_ptr.add(i) = *self.pos.add(len - 1 - i) ;
+                        *data_ptr.add(i) = *self.pos.add(len - 1 - i);
                     }
                 }
                 self.pos = self.pos.add(len);
@@ -578,23 +568,24 @@ macro_rules! impl_deserialize_value {
     };
 }
 
-impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a> 
-{
+impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a> {
     type Error = Error;
-    
+
     fn deserialize_any<V>(self, _: V) -> Result<V::Value, Self::Error>
-        where
-            V: serde::de::Visitor<'de> {
+    where
+        V: serde::de::Visitor<'de>,
+    {
         unimplemented!()
     }
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: serde::de::Visitor<'de> {
+    where
+        V: serde::de::Visitor<'de>,
+    {
         self.set_pos_of::<bool>()?;
         self.check_avaliable(1)?;
         let v = 0u8;
-        unsafe{
+        unsafe {
             ptr::copy_nonoverlapping(self.pos, ptr::addr_of!(v) as *mut u8, 1);
             self.pos = self.pos.add(1);
         };
@@ -607,12 +598,13 @@ impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a>
     }
 
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: serde::de::Visitor<'de> {
+    where
+        V: serde::de::Visitor<'de>,
+    {
         self.set_pos_of::<i8>()?;
         self.check_avaliable(1)?;
         let v = 0i8;
-        unsafe{
+        unsafe {
             ptr::copy_nonoverlapping(self.pos, ptr::addr_of!(v) as *mut u8, 1);
             self.pos = self.pos.add(1);
         };
@@ -631,7 +623,7 @@ impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a>
         self.set_pos_of::<u8>()?;
         self.check_avaliable(1)?;
         let v = 0u8;
-        unsafe{
+        unsafe {
             ptr::copy_nonoverlapping(self.pos, ptr::addr_of!(v) as *mut u8, 1);
             self.pos = self.pos.add(1);
         };
@@ -647,14 +639,14 @@ impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a>
     impl_deserialize_value!(deserialize_f64<f64> = visit_f64);
 
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         self.set_pos_of::<u8>()?;
         self.check_avaliable(1)?;
-        let v = [0u8;4];
-        unsafe{
+        let v = [0u8; 4];
+        unsafe {
             ptr::copy_nonoverlapping(self.pos, ptr::addr_of!(v) as *mut u8, 1);
-
         };
         if utf8_char_width(v[0]) != 1 {
             Err(Error::InvalidCharEncoding)
@@ -668,73 +660,82 @@ impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a>
     }
 
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {    
+    where
+        V: de::Visitor<'de>,
+    {
         visitor.visit_borrowed_str(&self.read_str()?)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         self.deserialize_str(visitor)
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         visitor.visit_borrowed_bytes(self.read_bytes()?)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         self.deserialize_bytes(visitor)
     }
 
     fn deserialize_option<V>(self, _: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         unimplemented!()
     }
 
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         visitor.visit_unit()
     }
 
     fn deserialize_unit_struct<V>(
-            self,
-            _: &'static str,
-            visitor: V,
-        ) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+        self,
+        _: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
         visitor.visit_unit()
     }
 
     fn deserialize_newtype_struct<V>(
-            self,
-            _: &'static str,
-            visitor: V,
-        ) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+        self,
+        _: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
         visitor.visit_newtype_struct(self)
     }
 
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         let len: u32 = de::Deserialize::deserialize(&mut *self)?;
         self.deserialize_tuple(len as usize, visitor)
     }
 
     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
-        struct Access<'a, 'b: 'a>
-        {
+    where
+        V: de::Visitor<'de>,
+    {
+        struct Access<'a, 'b: 'a> {
             deserializer: &'a mut Decoder<'b>,
             len: usize,
         }
@@ -743,8 +744,9 @@ impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a>
             type Error = Error;
 
             fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
-                where
-                    T: de::DeserializeSeed<'de> {
+            where
+                T: de::DeserializeSeed<'de>,
+            {
                 if self.len > 0 {
                     self.len -= 1;
                     let value = de::DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
@@ -766,53 +768,59 @@ impl<'de, 'a: 'de> Deserializer<'de> for &mut Decoder<'a>
     }
 
     fn deserialize_tuple_struct<V>(
-            self,
-            _: &'static str,
-            len: usize,
-            visitor: V,
-        ) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+        self,
+        _: &'static str,
+        len: usize,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
         self.deserialize_tuple(len, visitor)
     }
 
     fn deserialize_map<V>(self, _: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         unimplemented!()
     }
 
     fn deserialize_struct<V>(
-            self,
-            _: &'static str,
-            _: &'static [&'static str],
-            _: V,
-        ) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+        self,
+        _: &'static str,
+        _: &'static [&'static str],
+        _: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
         unimplemented!()
     }
 
     fn deserialize_enum<V>(
-            self,
-            _: &'static str,
-            _: &'static [&'static str],
-            _: V,
-        ) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+        self,
+        _: &'static str,
+        _: &'static [&'static str],
+        _: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
         unimplemented!()
     }
 
     fn deserialize_identifier<V>(self, _: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         unimplemented!()
     }
 
     fn deserialize_ignored_any<V>(self, _: V) -> Result<V::Value, Self::Error>
-        where
-            V: de::Visitor<'de> {
+    where
+        V: de::Visitor<'de>,
+    {
         unimplemented!()
     }
 

@@ -1,7 +1,7 @@
 [target.thumbv7m-none-eabi]
-runner = "probe-run --chip STM32F103C8"
+runner = "probe-rs run --chip STM32F103VE"
 rustflags = [
-  # "-C", "linker=flip-link", 
+  "-C", "linker=flip-link", 
   "-C", "link-arg=-Tlink.x",
   "-C", "link-arg=-Tdefmt.x",
   "-C", "link-arg=--nmagic"
@@ -9,3 +9,6 @@ rustflags = [
 
 [build]
 target = "thumbv7m-none-eabi"    # Cortex-M3
+
+[env]
+DEFMT_LOG = "debug"
